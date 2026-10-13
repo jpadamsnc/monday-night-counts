@@ -114,10 +114,10 @@
   <p id="subtitle"></p>
 
   <div id="drop">
-    <p class="big">Drop the Barn2Door pack list zips here</p>
+    <p class="big">Drop the Barn2Door pack list zip here</p>
     <p><button class="btn" id="browse" type="button">Choose files…</button></p>
     <input id="picker" type="file" accept=".zip,.pdf,application/zip,application/pdf" multiple hidden>
-    <p class="hint">One zip per location. Files are read on this device only — nothing is uploaded.</p>
+    <p class="hint">One zip covering every location, or a separate zip for each. Files are read on this device only — nothing is uploaded.</p>
   </div>
 
   <div id="files" hidden></div>
@@ -576,7 +576,7 @@ const MNC = (() => {
     for (const f of state.files) {
       for (const p of f.problems) notes.push({ kind: 'error', text: `${f.locations.join(', ')}: ${p}. It is not in the counts below — check it by hand.` });
     }
-    if (state.files.length && sum.locations.length === 1) notes.push({ kind: 'warn', text: `Only ${sum.locations[0]} is loaded so far. Drop the other location's zip to get the full counts.` });
+    if (state.files.length && sum.locations.length === 1) notes.push({ kind: 'warn', text: `Only ${sum.locations[0]} is in what's loaded. If you expected another location, check the pack list covers it or drop that location's zip as well.` });
     if (sum.cats.milk.sizes.size > 1) notes.push({ kind: 'warn', text: `Milk was ordered in more than one size (${[...sum.cats.milk.sizes].join(', ')}). The milk count adds them together — open the Milk row to see the split.` });
     fill($('notices'), ...notes.map(n => el('div', { class: 'note ' + (n.kind === 'error' ? 'error' : ''), role: n.kind === 'error' ? 'alert' : null }, n.text)));
   }

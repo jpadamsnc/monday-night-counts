@@ -6,8 +6,9 @@ order for the dairy farmer.
 
 **Use it:** https://jpadamsnc.github.io/monday-night-counts/
 
-Drop the Barn2Door pack list zips (one per location) onto the page. The files
-are read inside the browser; nothing is uploaded anywhere.
+Drop the Barn2Door pack list zip onto the page - one zip covering every
+location, or a separate zip for each. The files are read inside the browser;
+nothing is uploaded anywhere.
 
 ## Changing it
 
