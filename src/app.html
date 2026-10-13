@@ -1,0 +1,717 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monday Night Counts</title>
+<style>
+  :root {
+    --bg: #f5f4ef; --card: #ffffff; --ink: #1f2a24; --muted: #66716b; --line: #dfe3dd;
+    --accent: #2f6b4f; --accent-ink: #ffffff; --soft: #eaf2ed;
+    --warn-bg: #fff5d9; --warn-line: #e2bb4d; --warn-ink: #5c4500;
+    --bad-bg: #fde9e6; --bad-line: #d9867c; --bad-ink: #8a231a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141916; --card: #1d2420; --ink: #e8ece9; --muted: #9aa59f; --line: #323b36;
+      --accent: #7cc4a0; --accent-ink: #10231a; --soft: #24302a;
+      --warn-bg: #362e14; --warn-line: #8a7226; --warn-ink: #f3dc95;
+      --bad-bg: #3a1e1b; --bad-line: #8f4a42; --bad-ink: #f5b9b1;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.45 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 1.6rem; margin: 0; }
+  h2 { font-size: 1.1rem; margin: 0 0 12px; }
+  h3 { font-size: 1rem; margin: 20px 0 8px; }
+  h3 small { font-weight: 400; color: var(--muted); }
+  #subtitle { margin: 4px 0 20px; color: var(--muted); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+  [hidden] { display: none !important; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  .btn { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 7px 14px; }
+  .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .link { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; }
+
+  #drop { border: 2px dashed var(--line); border-radius: 12px; padding: 36px 16px; text-align: center; margin-bottom: 16px; background: var(--card); }
+  #drop.compact { padding: 14px 16px; }
+  #drop.over { border-color: var(--accent); background: var(--soft); }
+  #drop p { margin: 0 0 10px; }
+  #drop .hint { color: var(--muted); font-size: .9rem; margin: 10px 0 0; }
+  #drop.compact .big { display: none; }
+  #drop .big { font-size: 1.15rem; font-weight: 600; }
+
+  #files { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
+  .chip { background: var(--soft); border-radius: 999px; padding: 5px 6px 5px 14px; font-size: .9rem; display: flex; gap: 8px; align-items: center; }
+  .chip small { color: var(--muted); }
+  .chip button { border: 0; background: none; border-radius: 50%; width: 26px; height: 26px; line-height: 1; font-size: 1.1rem; color: var(--muted); }
+  .chip button:hover { background: var(--line); color: var(--ink); }
+
+  .note { border: 1px solid var(--warn-line); background: var(--warn-bg); color: var(--warn-ink); border-radius: 10px; padding: 10px 14px; margin-bottom: 10px; }
+  .note.error { border-color: var(--bad-line); background: var(--bad-bg); color: var(--bad-ink); }
+
+  #decisions { border-color: var(--bad-line); }
+  #decisions h2 { color: var(--bad-ink); }
+  #decisions.settled { border-color: var(--line); }
+  #decisions.settled h2 { color: var(--ink); }
+  .decision { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; padding: 12px 0; border-top: 1px solid var(--line); }
+  .decision .who { font-weight: 600; }
+  .decision .what { color: var(--muted); font-size: .92rem; }
+  .decision a { color: var(--accent); }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; background: var(--card); padding: 8px 16px; }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  .seg.undecided { border-color: var(--bad-line); box-shadow: 0 0 0 2px var(--bad-bg); }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 9px 8px; border-top: 1px solid var(--line); text-align: right; vertical-align: top; font-variant-numeric: tabular-nums; }
+  thead th { border-top: 0; font-size: .85rem; color: var(--muted); font-weight: 600; vertical-align: bottom; }
+  th:first-child, td:first-child { text-align: left; padding-left: 0; }
+  td.num { font-size: 1.25rem; font-weight: 600; }
+  td.num.zero { color: var(--muted); font-weight: 400; }
+  td.total, th.total { background: var(--soft); padding-right: 12px; }
+  .rowlabel { display: block; background: none; border: 0; padding: 0 0 0 1.1em; text-indent: -1.1em; text-align: left; font-weight: 600; }
+  .rowlabel::before { content: "\25B8"; display: inline-block; width: 1.1em; text-indent: 0; color: var(--muted); }
+  .rowlabel[aria-expanded="true"]::before { content: "\25BE"; }
+  .unit { display: block; color: var(--muted); font-size: .82rem; font-weight: 400; padding-left: 1.1em; }
+  .pending { display: inline-block; margin-left: 6px; font-size: .75rem; font-weight: 600; color: var(--bad-ink); background: var(--bad-bg); border-radius: 6px; padding: 1px 6px; vertical-align: middle; white-space: nowrap; }
+  tr.section th { text-align: left; padding-top: 18px; font-size: .85rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  tr.detail td { text-align: left; font-size: .9rem; color: var(--muted); background: var(--bg); padding: 10px 12px; }
+  tr.detail strong { color: var(--ink); display: block; margin-top: 6px; }
+  tr.detail strong:first-child { margin-top: 0; }
+  tr.detail ul { margin: 2px 0 0; padding-left: 18px; }
+  .empty { color: var(--muted); text-align: left; }
+
+  .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+  .fields label { font-size: .9rem; color: var(--muted); display: block; }
+  .fields input { display: block; width: 100%; margin-top: 4px; font: inherit; font-size: 1.3rem; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); }
+  .fields input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .ledger { list-style: none; margin: 0 0 10px; padding: 0; }
+  .ledger li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; font-variant-numeric: tabular-nums; }
+  .ledger li.sum { border-top: 2px solid var(--ink); margin-top: 6px; padding-top: 10px; font-weight: 700; font-size: 1.3rem; align-items: baseline; }
+  .ledger li.sum small { font-size: .85rem; font-weight: 400; color: var(--muted); }
+  .message { margin-top: 20px; background: var(--soft); border-radius: 10px; padding: 12px 14px; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+  .message p { margin: 0; flex: 1 1 260px; }
+  @media (max-width: 520px) {
+    .fields { grid-template-columns: 1fr; }
+    th, td { padding: 8px 5px; }
+    td.num { font-size: 1.1rem; }
+  }
+  @media print {
+    #drop, .chip button, #startOver, .message .btn { display: none !important; }
+    body { background: #fff; }
+    .card { border: 0; padding: 0; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Monday Night Counts</h1>
+  <p id="subtitle"></p>
+
+  <div id="drop">
+    <p class="big">Drop the Barn2Door pack list zips here</p>
+    <p><button class="btn" id="browse" type="button">Choose files…</button></p>
+    <input id="picker" type="file" accept=".zip,.pdf,application/zip,application/pdf" multiple hidden>
+    <p class="hint">One zip per location. Files are read on this device only — nothing is uploaded.</p>
+  </div>
+
+  <div id="files" hidden></div>
+  <div id="notices"></div>
+  <section id="decisions" class="card" hidden></section>
+  <section id="counts" class="card" hidden></section>
+
+  <section id="order" class="card" hidden>
+    <h2>Order for the farmer</h2>
+
+    <h3>Milk <small id="milkUnit"></small></h3>
+    <div class="fields">
+      <label>Already on hand
+        <input id="onHand" type="number" min="0" step="1" inputmode="numeric" autocomplete="off">
+      </label>
+      <label>For ourselves
+        <input id="ours" type="number" min="0" step="1" inputmode="numeric" autocomplete="off">
+      </label>
+    </div>
+    <div id="milkOut"></div>
+
+    <h3>Raw cream <small id="creamUnit"></small></h3>
+    <div class="fields">
+      <label>Already on hand
+        <input id="creamOnHand" type="number" min="0" step="1" inputmode="numeric" autocomplete="off" placeholder="0">
+      </label>
+      <label>For ourselves
+        <input id="creamOurs" type="number" min="0" step="1" inputmode="numeric" autocomplete="off" placeholder="0">
+      </label>
+    </div>
+    <div id="creamOut"></div>
+
+    <div id="orderOut"></div>
+  </section>
+</main>
+
+<script src="lib/pdf.min.js"></script>
+<script src="lib/pdf.worker.min.js"></script>
+
+<script id="logic">
+// Reading and counting. No page/DOM access in this block so it can be tested on its own.
+const MNC = (() => {
+  const CATEGORIES = [
+    { key: 'milk', label: 'Milk' },
+    { key: 'eggs', label: 'Eggs' },
+    { key: 'washedEggs', label: 'Washed Eggs' },
+    { key: 'cream', label: 'Raw Cream' },
+  ];
+
+  function classify(name) {
+    if (/sourdough/i.test(name)) return 'sourdough';
+    if (/^milk\b/i.test(name)) return 'milk';
+    if (/^eggs?\b/i.test(name)) return /\bwashed\b/i.test(name) ? 'washedEggs' : 'eggs';
+    if (/^(raw )?cream\b/i.test(name)) return 'cream';
+    return null;
+  }
+
+  // ---- zip ----
+  async function inflateRaw(bytes) {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+
+  async function unzip(buf) {
+    const u8 = new Uint8Array(buf);
+    const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+    let eocd = -1;
+    for (let i = u8.length - 22; i >= Math.max(0, u8.length - 22 - 65535); i--) {
+      if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    }
+    if (eocd < 0) throw new Error('the zip file looks damaged');
+    const count = dv.getUint16(eocd + 10, true);
+    let p = dv.getUint32(eocd + 16, true);
+    const out = [];
+    for (let n = 0; n < count && dv.getUint32(p, true) === 0x02014b50; n++) {
+      const method = dv.getUint16(p + 10, true);
+      const csize = dv.getUint32(p + 20, true);
+      const nameLen = dv.getUint16(p + 28, true);
+      const extraLen = dv.getUint16(p + 30, true);
+      const commentLen = dv.getUint16(p + 32, true);
+      const local = dv.getUint32(p + 42, true);
+      const name = new TextDecoder().decode(u8.subarray(p + 46, p + 46 + nameLen));
+      p += 46 + nameLen + extraLen + commentLen;
+      if (name.endsWith('/')) continue;
+      const start = local + 30 + dv.getUint16(local + 26, true) + dv.getUint16(local + 28, true);
+      const packed = u8.subarray(start, start + csize);
+      if (method === 0) out.push({ name, bytes: packed.slice() });
+      else if (method === 8) out.push({ name, bytes: await inflateRaw(packed) });
+      else throw new Error('the zip file uses a compression type this tool cannot read');
+    }
+    return out;
+  }
+
+  const startsWith = (u8, text) => [...text].every((ch, i) => u8[i] === ch.charCodeAt(0));
+
+  // Accepts a zip (returns the PDFs inside) or a bare PDF.
+  async function extractPdfs(name, buf) {
+    const u8 = new Uint8Array(buf);
+    if (startsWith(u8, '%PDF')) return [{ name, bytes: u8 }];
+    if (!startsWith(u8, 'PK')) throw new Error('not a zip or PDF file');
+    const pdfs = (await unzip(buf)).filter(f => startsWith(f.bytes, '%PDF'));
+    if (!pdfs.length) throw new Error('no PDF was found inside the zip');
+    return pdfs;
+  }
+
+  // ---- pdf ----
+  function toLines(words) {
+    const sorted = words.slice().sort((a, b) => b.y - a.y || a.x - b.x);
+    const lines = [];
+    for (const w of sorted) {
+      const last = lines[lines.length - 1];
+      if (last && Math.abs(last.y - w.y) <= 2) last.words.push(w);
+      else lines.push({ y: w.y, words: [w] });
+    }
+    for (const l of lines) {
+      l.words.sort((a, b) => a.x - b.x);
+      // Pieces that touch ("10-" + "pack") are one word split by the PDF; only real gaps get a space.
+      l.text = l.words.reduce((text, w, i) => {
+        const prev = l.words[i - 1];
+        return text + (prev && w.x - (prev.x + prev.w) > 0.8 ? ' ' : '') + w.s;
+      }, '');
+    }
+    return lines;
+  }
+
+  // Column edges from the header row. Header labels are centred in their columns, so
+  // starting from the table's left edge each right edge is a mirror of the left one.
+  function findColumns(headerLine, bodyWords) {
+    const cols = [];
+    for (const w of headerLine.words) {
+      const c = cols[cols.length - 1];
+      if (c && w.x - c.x1 < 10) { c.x1 = w.x + w.w; c.label += ' ' + w.s; }
+      else cols.push({ x0: w.x, x1: w.x + w.w, label: w.s });
+    }
+    const minX = Math.min(...bodyWords.map(w => w.x));
+    let edges = [Math.min(minX - 5, cols[0].x0 - 1)];
+    let sane = true;
+    for (const c of cols) {
+      const left = edges[edges.length - 1];
+      const right = c.x0 + c.x1 - left;
+      if (left > c.x0 || right < c.x1) sane = false;
+      edges.push(right);
+    }
+    if (!sane) {
+      edges = [0];
+      for (let i = 1; i < cols.length; i++) edges.push((cols[i - 1].x1 + cols[i].x0) / 2);
+      edges.push(0);
+    }
+    edges[0] = -Infinity;
+    edges[edges.length - 1] = Infinity;
+    const find = re => cols.findIndex(c => re.test(c.label));
+    return {
+      edges,
+      item: find(/^item/i), customer: find(/^customer/i), order: find(/^order/i),
+      location: find(/^location/i), payment: find(/^payment/i),
+      of(w) {
+        const mid = w.x + w.w / 2;
+        for (let i = 0; i < cols.length; i++) if (mid < edges[i + 1]) return i;
+        return cols.length - 1;
+      },
+    };
+  }
+
+  function finishRow(raw, cols) {
+    const cell = i => (i < 0 ? [] : toLines(raw.cells[i] || []).map(l => l.text));
+    const nameParts = [];
+    let sizeParts = null, qty = null, m;
+    for (const t of cell(cols.item)) {
+      if ((m = /^Qty:\s*(\d+)\s*$/i.exec(t))) { qty = +m[1]; break; }
+      if ((m = /^Size:\s*(.*)$/i.exec(t))) { sizeParts = [m[1]]; continue; }
+      (sizeParts || nameParts).push(t);
+    }
+    const customerLines = cell(cols.customer);
+    const isPhone = t => /^\(?\d{3}\)?[\s.-]*\d{3}[\s.-]*\d{4}$/.test(t);
+    const locLines = cell(cols.location);
+    const firstAddr = locLines.findIndex(t => /^\d/.test(t));
+    const item = nameParts.join(' ').replace(/\s+/g, ' ').trim();
+    return {
+      item,
+      size: (sizeParts || []).join(' ').replace(/\s+/g, ' ').trim(),
+      qty,
+      customer: customerLines.filter(t => !isPhone(t)).join(' '),
+      phone: customerLines.find(isPhone) || '',
+      order: (cell(cols.order).find(t => /^\d+$/.test(t)) || ''),
+      location: (firstAddr > 0 ? locLines.slice(0, firstAddr) : locLines.slice(0, 1)).join(' ') || 'Unknown location',
+      payment: cell(cols.payment).join(' ').toUpperCase(),
+      page: raw.page,
+      category: classify(item),
+    };
+  }
+
+  async function readPackList(pdfjsLib, bytes) {
+    const doc = await pdfjsLib.getDocument({ data: bytes.slice(), isEvalSupported: false }).promise;
+    const rawRows = [];
+    let cols = null, title = '', date = '', sawHeader = false;
+
+    for (let p = 1; p <= doc.numPages; p++) {
+      const page = await doc.getPage(p);
+      const content = await page.getTextContent();
+      const words = content.items
+        .filter(it => it.str && it.str.trim())
+        .map(it => ({ s: it.str.trim(), x: it.transform[4], y: it.transform[5], w: it.width }));
+      const lines = toLines(words).filter(l => !/^\d+ of \d+$/.test(l.text));
+      const header = lines.find(l => /^Item\(s\)/i.test(l.text) && /Order/i.test(l.text));
+      const body = lines.filter(l => !header || l.y < header.y - 2).flatMap(l => l.words);
+      if (header) {
+        if (!sawHeader) {
+          const above = lines.filter(l => l.y > header.y + 2);
+          title = (above.find(l => !/^\d/.test(l.text)) || {}).text || '';
+          date = ((above.find(l => /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(l.text)) || {}).text) || '';
+        }
+        sawHeader = true;
+        if (body.length) cols = findColumns(header, body);
+      }
+      if (!cols || !body.length) continue;
+      if (cols.item < 0 || cols.order < 0) break;
+
+      // Every row has its order number on the row's first line; those mark where rows start.
+      const tops = [];
+      for (const w of body) {
+        if (cols.of(w) === cols.order && /^\d{4,}$/.test(w.s) && !tops.some(t => Math.abs(t - w.y) <= 2)) tops.push(w.y);
+      }
+      tops.sort((a, b) => b - a);
+      const pageRows = tops.map(() => ({ page: p, cells: {}, cols }));
+      for (const w of body) {
+        let k = -1;
+        while (k + 1 < tops.length && w.y <= tops[k + 1] + 3) k++;
+        // Anything above the first row on a page is the tail of the previous page's last row.
+        const row = k >= 0 ? pageRows[k] : rawRows[rawRows.length - 1];
+        if (!row) continue;
+        const c = cols.of(w);
+        (row.cells[c] = row.cells[c] || []).push(k >= 0 ? w : { ...w, y: w.y - 10000 });
+      }
+      rawRows.push(...pageRows);
+    }
+
+    if (!sawHeader || !cols || cols.item < 0 || cols.order < 0) {
+      throw new Error('this does not look like a Barn2Door pack list');
+    }
+
+    const rows = [], problems = [], seen = {};
+    for (const raw of rawRows) {
+      const row = finishRow(raw, raw.cols);
+      if (!row.item || row.qty == null) {
+        problems.push(`A line on page ${row.page}${row.order ? ' (order #' + row.order + ')' : ''} could not be read`);
+        continue;
+      }
+      const key = [row.location, row.order, row.item, row.size].join('|');
+      seen[key] = (seen[key] || 0) + 1;
+      row.id = key + '#' + seen[key];
+      rows.push(row);
+    }
+    return { title, date, rows, problems, pages: doc.numPages };
+  }
+
+  // ---- counting ----
+  const isPaid = row => row.payment === 'PAID';
+
+  // decisions: { [row.id]: 'include' | 'ignore' } for rows whose payment is not PAID.
+  function summarize(rows, decisions) {
+    const locations = [...new Set(rows.map(r => r.location))];
+    const blank = () => ({ in: 0, pending: 0, ignored: 0 });
+    const makeLine = () => ({ byLoc: Object.fromEntries(locations.map(l => [l, blank()])), total: blank() });
+    const cats = {};
+    for (const c of CATEGORIES) cats[c.key] = { ...makeLine(), sizes: new Set(), variants: new Map() };
+    const sourdough = new Map();
+    const unpaid = [];
+
+    for (const r of rows) {
+      if (!r.category) continue;
+      let bucket = 'in';
+      if (!isPaid(r)) {
+        unpaid.push(r);
+        const d = decisions[r.id];
+        bucket = d === 'include' ? 'in' : d === 'ignore' ? 'ignored' : 'pending';
+      }
+      const variantKey = r.location + '|' + r.item + '|' + r.size;
+      let line;
+      if (r.category === 'sourdough') {
+        const key = (r.item + '|' + r.size).toLowerCase();
+        if (!sourdough.has(key)) sourdough.set(key, { item: r.item, size: r.size, ...makeLine(), variants: new Map() });
+        line = sourdough.get(key);
+      } else {
+        line = cats[r.category];
+        if (bucket !== 'ignored') line.sizes.add(r.size);
+      }
+      line.byLoc[r.location][bucket] += r.qty;
+      line.total[bucket] += r.qty;
+      if (!line.variants.has(variantKey)) line.variants.set(variantKey, { location: r.location, item: r.item, size: r.size, ...blank() });
+      line.variants.get(variantKey)[bucket] += r.qty;
+    }
+    return {
+      locations, cats, unpaid,
+      sourdough: [...sourdough.values()].sort((a, b) => a.item.localeCompare(b.item)),
+    };
+  }
+
+  return { CATEGORIES, classify, unzip, extractPdfs, readPackList, summarize, isPaid };
+})();
+</script>
+
+<script id="ui">
+(() => {
+  const $ = id => document.getElementById(id);
+  const state = { files: [], decisions: {}, open: new Set(), notices: [], busy: false };
+  const store = {
+    get(k) { try { return localStorage.getItem('mnc.' + k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem('mnc.' + k, v); } catch { /* private window */ } },
+  };
+
+  function el(tag, props, ...kids) {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(props || {})) {
+      if (v == null || v === false) continue;
+      if (k === 'class') n.className = v;
+      else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+      else n.setAttribute(k, v === true ? '' : v);
+    }
+    for (const kid of kids.flat(Infinity)) if (kid != null && kid !== false) n.append(kid);
+    return n;
+  }
+
+  // replaceChildren that skips the blanks left by `cond ? node : null`.
+  const fill = (node, ...kids) => node.replaceChildren(...kids.flat(Infinity).filter(k => k != null && k !== false));
+
+  const plural = (n, word) => (n === 1 ? word : word + 's');
+  function parseDate(text) {
+    const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(text || '');
+    return m ? new Date(+m[3], +m[1] - 1, +m[2]) : null;
+  }
+
+  // ---- loading files ----
+  async function addFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    state.notices = [];
+    state.busy = true;
+    render();
+    for (const f of files) {
+      try {
+        const pdfs = await MNC.extractPdfs(f.name, await f.arrayBuffer());
+        for (const pdf of pdfs) {
+          const list = await MNC.readPackList(pdfjsLib, pdf.bytes);
+          if (!list.rows.length) throw new Error('no order lines were found in it');
+          addList({ source: f.name, ...list, locations: [...new Set(list.rows.map(r => r.location))] });
+        }
+      } catch (e) {
+        state.notices.push({ kind: 'error', text: `${f.name}: ${e.message || e}` });
+      }
+    }
+    state.busy = false;
+    render();
+  }
+
+  // A newer file for a location replaces the one already loaded for it.
+  function addList(list) {
+    const clash = f => f.locations.some(l => list.locations.includes(l));
+    if (state.files.some(clash)) {
+      state.notices.push({ kind: 'warn', text: `Replaced the file already loaded for ${list.locations.join(', ')}.` });
+      state.files = state.files.filter(f => !clash(f));
+    }
+    state.files.push(list);
+  }
+
+  // ---- rendering ----
+  function render() {
+    const rows = state.files.flatMap(f => f.rows);
+    const sum = MNC.summarize(rows, state.decisions);
+    const has = state.files.length > 0;
+    renderHeader();
+    renderFiles();
+    renderNotices(sum);
+    renderDecisions(sum);
+    renderCounts(sum);
+    $('order').hidden = !has;
+    if (has) renderOrder(sum);
+  }
+
+  function renderHeader() {
+    const dates = [...new Set(state.files.map(f => f.date).filter(Boolean))];
+    const d = parseDate(dates[0]);
+    $('subtitle').textContent = state.busy ? 'Reading…'
+      : !state.files.length ? 'Farm delivery counts from the Barn2Door pack lists.'
+      : d ? 'Delivery on ' + d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+      : 'Delivery date not found in the file';
+    $('drop').classList.toggle('compact', state.files.length > 0);
+  }
+
+  function renderFiles() {
+    const box = $('files');
+    box.hidden = !state.files.length;
+    fill(box,
+      ...state.files.map(f => el('span', { class: 'chip' },
+        el('span', {}, f.locations.join(', '), ' ', el('small', {}, `${f.rows.length} lines · ${f.source}`)),
+        el('button', { type: 'button', title: 'Remove this file', 'aria-label': `Remove ${f.locations.join(', ')}`, onclick: () => { state.files = state.files.filter(x => x !== f); render(); } }, '×'))),
+      state.files.length ? el('button', { class: 'link', id: 'startOver', type: 'button', onclick: startOver }, 'Start over') : null);
+  }
+
+  function startOver() {
+    state.files = []; state.decisions = {}; state.notices = []; state.open.clear();
+    $('onHand').value = '';
+    $('creamOnHand').value = '';
+    render();
+  }
+
+  function renderNotices(sum) {
+    const notes = state.notices.slice();
+    const dates = [...new Set(state.files.map(f => f.date).filter(Boolean))];
+    if (dates.length > 1) notes.push({ kind: 'error', text: `These files are for different dates (${dates.join(' and ')}). Check that both are this week's.` });
+    for (const f of state.files) {
+      for (const p of f.problems) notes.push({ kind: 'error', text: `${f.locations.join(', ')}: ${p}. It is not in the counts below — check it by hand.` });
+    }
+    if (state.files.length && sum.locations.length === 1) notes.push({ kind: 'warn', text: `Only ${sum.locations[0]} is loaded so far. Drop the other location's zip to get the full counts.` });
+    if (sum.cats.milk.sizes.size > 1) notes.push({ kind: 'warn', text: `Milk was ordered in more than one size (${[...sum.cats.milk.sizes].join(', ')}). The milk count adds them together — open the Milk row to see the split.` });
+    fill($('notices'), ...notes.map(n => el('div', { class: 'note ' + (n.kind === 'error' ? 'error' : ''), role: n.kind === 'error' ? 'alert' : null }, n.text)));
+  }
+
+  function renderDecisions(sum) {
+    const box = $('decisions');
+    box.hidden = !sum.unpaid.length;
+    if (!sum.unpaid.length) return;
+    const waiting = sum.unpaid.filter(r => !state.decisions[r.id]).length;
+    box.classList.toggle('settled', !waiting);
+    fill(box,
+      el('h2', {}, waiting ? `Payment problem — include or ignore? (${waiting} to decide)` : 'Payment problems — all decided'),
+      ...sum.unpaid.map(r => {
+        const choice = state.decisions[r.id];
+        const pick = v => () => { state.decisions[r.id] = v; render(); };
+        return el('div', { class: 'decision' },
+          el('div', {},
+            el('div', { class: 'who' }, r.customer || 'Unknown customer', r.phone ? [' · ', el('a', { href: 'tel:' + r.phone.replace(/\D/g, '') }, r.phone)] : null),
+            el('div', {}, `${r.qty} × ${r.item}${r.size ? ' (' + r.size + ')' : ''}`),
+            el('div', { class: 'what' }, `Payment ${r.payment || 'blank'} · ${r.location} · Order #${r.order}`)),
+          el('div', { class: 'seg' + (choice ? '' : ' undecided'), role: 'group', 'aria-label': 'Include or ignore this item' },
+            el('button', { type: 'button', 'aria-pressed': String(choice === 'include'), onclick: pick('include') }, 'Include'),
+            el('button', { type: 'button', 'aria-pressed': String(choice === 'ignore'), onclick: pick('ignore') }, 'Ignore')));
+      }));
+  }
+
+  function countCell(c, cls) {
+    return el('td', { class: `num ${cls || ''} ${c.in === 0 && !c.pending ? 'zero' : ''}` }, String(c.in),
+      c.pending ? el('span', { class: 'pending', title: 'Waiting on a payment decision above — not counted yet' }, `+${c.pending} ?`) : null);
+  }
+
+  function detailRow(line, sum) {
+    const groups = sum.locations.map(loc => {
+      const vs = [...line.variants.values()].filter(v => v.location === loc);
+      if (!vs.length) return null;
+      return [el('strong', {}, loc), el('ul', {}, vs.map(v => {
+        const extra = [v.pending && `${v.pending} more undecided`, v.ignored && `${v.ignored} ignored`].filter(Boolean);
+        return el('li', {}, `${v.in} × ${v.item}${v.size ? ' (' + v.size + ')' : ''}${extra.length ? ' — ' + extra.join(', ') : ''}`);
+      }))];
+    });
+    return el('tr', { class: 'detail' }, el('td', { colspan: sum.locations.length + 2 }, groups));
+  }
+
+  function countRow(key, label, unit, line, sum) {
+    const open = state.open.has(key);
+    const toggle = () => { open ? state.open.delete(key) : state.open.add(key); render(); };
+    const any = line.variants.size > 0;
+    return [
+      el('tr', {},
+        el('td', {},
+          any ? el('button', { class: 'rowlabel', type: 'button', 'aria-expanded': String(open), onclick: toggle }, label)
+              : el('span', { class: 'rowlabel' }, label),
+          unit ? el('span', { class: 'unit' }, unit) : null),
+        sum.locations.map(loc => countCell(line.byLoc[loc])),
+        countCell(line.total, 'total')),
+      open && any ? detailRow(line, sum) : null,
+    ];
+  }
+
+  function renderCounts(sum) {
+    const box = $('counts');
+    box.hidden = !state.files.length;
+    if (!state.files.length) return;
+    const cols = sum.locations.length + 2;
+    fill(box,
+      el('h2', {}, 'Counts by location'),
+      el('table', {},
+        el('thead', {}, el('tr', {}, el('th', {}, ''), sum.locations.map(l => el('th', { scope: 'col' }, l)), el('th', { scope: 'col', class: 'total' }, 'Total'))),
+        el('tbody', {},
+          MNC.CATEGORIES.map(c => countRow(c.key, c.label, [...sum.cats[c.key].sizes].join(', '), sum.cats[c.key], sum)),
+          el('tr', { class: 'section' }, el('th', { colspan: cols, scope: 'colgroup' }, 'Sourdough')),
+          sum.sourdough.length
+            ? sum.sourdough.map(s => countRow('sd|' + s.item + '|' + s.size, s.item, s.size, s, sum))
+            : el('tr', {}, el('td', { class: 'empty', colspan: cols }, 'No sourdough items this week.')))));
+  }
+
+  function readCount(input) {
+    const v = input.value.trim();
+    if (v === '') return null;
+    const n = Math.floor(Number(v));
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  }
+
+  // What the farmer is told. They think in gallons; we count half gallons.
+  function farmerMilk(need, sizes) {
+    const size = sizes.length === 1 ? sizes[0].toLowerCase() : '';
+    if (size !== 'half gallon' && size !== 'gallon') return `${need} ${size ? plural(need, size) + ' of milk' : plural(need, 'milk')}`;
+    const gallons = size === 'gallon' ? need : need / 2;
+    return `${gallons} ${plural(gallons, 'gallon')} of milk`;
+  }
+
+  function ledger(sum, line, ours, onHand, need, unit) {
+    return el('ul', { class: 'ledger' },
+      sum.locations.map(loc => el('li', {}, el('span', {}, loc), el('span', {}, String(line.byLoc[loc].in)))),
+      el('li', {}, el('span', {}, 'For ourselves'), el('span', {}, ours == null ? '—' : '+ ' + ours)),
+      el('li', {}, el('span', {}, 'Already on hand'), el('span', {}, onHand == null ? '—' : '− ' + onHand)),
+      el('li', { class: 'sum' }, el('span', {}, 'To order'),
+        el('span', {}, need == null ? '—' : [String(need), ' ', el('small', {}, unit)])));
+  }
+
+  const pendingNote = (line, word) => (line.total.pending
+    ? el('div', { class: 'note error' }, `${line.total.pending} ${plural(line.total.pending, word)} with a payment problem ${line.total.pending === 1 ? 'is' : 'are'} not counted yet. Choose Include or Ignore above to finish the order.`)
+    : null);
+
+  function renderOrder(sum) {
+    const milk = sum.cats.milk, cream = sum.cats.cream;
+    const milkSizes = [...milk.sizes], creamSizes = [...cream.sizes];
+    const milkUnit = milkSizes.length === 1 ? milkSizes[0].toLowerCase() : 'milk';
+    const creamUnit = creamSizes.length === 1 ? creamSizes[0].toLowerCase() : creamSizes.length ? 'cream' : 'pint';
+    $('milkUnit').textContent = plural(2, milkUnit);
+    $('creamUnit').textContent = plural(2, creamUnit);
+
+    // Milk needs both numbers before there is an order; cream boxes left blank count as 0.
+    const onHand = readCount($('onHand')), ours = readCount($('ours'));
+    const ready = onHand != null && ours != null;
+    const need = ready ? Math.max(0, milk.total.in + ours - onHand) : null;
+    const spare = ready ? Math.max(0, onHand - milk.total.in - ours) : 0;
+    const creamOnHand = readCount($('creamOnHand')) || 0, creamOurs = readCount($('creamOurs')) || 0;
+    const creamNeed = Math.max(0, cream.total.in + creamOurs - creamOnHand);
+    const creamSpare = Math.max(0, creamOnHand - cream.total.in - creamOurs);
+
+    const d = parseDate(state.files.map(f => f.date).find(Boolean));
+    const when = d ? `${d.toLocaleDateString('en-US', { weekday: 'long' })} ${d.getMonth() + 1}/${d.getDate()}` : 'this week';
+    const parts = [
+      need ? farmerMilk(need, milkSizes) : null,
+      creamNeed ? `${creamNeed} ${plural(creamNeed, creamUnit)}${creamUnit === 'cream' ? '' : ' of raw cream'}` : null,
+    ].filter(Boolean);
+    const message = !ready ? ''
+      : parts.length ? `For ${when} we need ${parts.join(' and ')}.`
+      : `We don't need any milk or cream for ${when}.`;
+    const blocked = milk.total.pending > 0 || cream.total.pending > 0;
+
+    const copyBtn = el('button', { class: 'btn primary', type: 'button', disabled: blocked || !ready }, 'Copy message');
+    copyBtn.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(message); }
+      catch {
+        const t = el('textarea', {}); t.value = message; document.body.append(t); t.select();
+        document.execCommand('copy'); t.remove();
+      }
+      copyBtn.textContent = 'Copied';
+      setTimeout(() => { copyBtn.textContent = 'Copy message'; }, 1800);
+    });
+
+    fill($('milkOut'),
+      pendingNote(milk, 'milk'),
+      ledger(sum, milk, ours, onHand, need, plural(need, milkUnit)),
+      !ready ? el('p', { class: 'empty' }, 'Enter both milk numbers to get the order (0 is fine).') : null,
+      spare ? el('p', { class: 'empty' }, `You already have enough milk on hand — ${spare} to spare.`) : null);
+    fill($('creamOut'),
+      pendingNote(cream, 'cream'),
+      ledger(sum, cream, creamOurs, creamOnHand, creamNeed, plural(creamNeed, creamUnit)),
+      creamSpare ? el('p', { class: 'empty' }, `You already have enough cream on hand — ${creamSpare} to spare.`) : null);
+    fill($('orderOut'), ready ? el('div', { class: 'message' }, el('p', {}, message), copyBtn) : null);
+  }
+
+  // ---- wiring ----
+  const drop = $('drop'), picker = $('picker');
+  $('browse').addEventListener('click', () => picker.click());
+  picker.addEventListener('change', () => { addFiles(picker.files); picker.value = ''; });
+  let depth = 0;
+  const hasFiles = e => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+  window.addEventListener('dragenter', e => { if (hasFiles(e)) { depth++; drop.classList.add('over'); } });
+  window.addEventListener('dragleave', e => { if (hasFiles(e) && --depth <= 0) { depth = 0; drop.classList.remove('over'); } });
+  window.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
+  window.addEventListener('drop', e => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    depth = 0; drop.classList.remove('over');
+    addFiles(e.dataTransfer.files);
+  });
+
+  // "For ourselves" is usually the same every week, so it is remembered; "on hand" never is.
+  for (const id of ['ours', 'creamOurs']) {
+    $(id).value = store.get(id) || '';
+    $(id).addEventListener('input', () => { store.set(id, $(id).value.trim()); render(); });
+  }
+  for (const id of ['onHand', 'creamOnHand']) $(id).addEventListener('input', render);
+
+  window.MNCApp = { addFiles, state };
+  render();
+})();
+</script>
+</body>
+</html>

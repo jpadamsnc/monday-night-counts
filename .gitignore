@@ -1,0 +1,9 @@
+# Pack lists contain customer names and phone numbers. Never commit them.
+*.zip
+*.pdf
+
+# Local double-click copy of index.html (identical, rebuilt by build.js)
+Monday Night Counts.html
+
+.claude/
+node_modules/
