@@ -374,9 +374,12 @@ const MNC = (() => {
   }
 
   // ---- counting ----
+  // PAID counts. So does PENDING: a subscription Barn2Door has not charged yet (it charges
+  // about four days before delivery). Anything else, such as FAILED, needs a decision.
   const isPaid = row => row.payment === 'PAID';
+  const isPending = row => row.payment === 'PENDING';
 
-  // decisions: { [row.id]: 'include' | 'ignore' } for rows whose payment is not PAID.
+  // decisions: { [row.id]: 'include' | 'ignore' } for rows whose payment needs a decision.
   function summarize(rows, decisions) {
     const locations = [...new Set(rows.map(r => r.location))];
     const blank = () => ({ in: 0, pending: 0, ignored: 0 });
@@ -385,11 +388,13 @@ const MNC = (() => {
     for (const c of CATEGORIES) cats[c.key] = { ...makeLine(), sizes: new Set(), variants: new Map() };
     const sourdough = new Map();
     const unpaid = [];
+    let notCharged = 0;
 
     for (const r of rows) {
       if (!r.category) continue;
       let bucket = 'in';
-      if (!isPaid(r)) {
+      if (isPending(r)) notCharged++;
+      else if (!isPaid(r)) {
         unpaid.push(r);
         const d = decisions[r.id];
         bucket = d === 'include' ? 'in' : d === 'ignore' ? 'ignored' : 'pending';
@@ -410,7 +415,7 @@ const MNC = (() => {
       line.variants.get(variantKey)[bucket] += r.qty;
     }
     return {
-      locations, cats, unpaid,
+      locations, cats, unpaid, notCharged,
       sourdough: [...sourdough.values()].sort((a, b) => a.item.localeCompare(b.item)),
     };
   }
@@ -531,6 +536,7 @@ const MNC = (() => {
       for (const p of f.problems) notes.push({ kind: 'error', text: `${f.locations.join(', ')}: ${p}. It is not in the counts below — check it by hand.` });
     }
     if (state.files.length && sum.locations.length === 1) notes.push({ kind: 'warn', text: `Only ${sum.locations[0]} is in what's loaded. If you expected another location, check the pack list covers it or drop that location's zip as well.` });
+    if (sum.notCharged) notes.push({ kind: 'warn', text: `${sum.notCharged} counted ${plural(sum.notCharged, 'line')} ${sum.notCharged === 1 ? 'is a subscription' : 'are subscriptions'} Barn2Door has not charged yet (payment PENDING). They are included in the counts.` });
     if (sum.cats.milk.sizes.size > 1) notes.push({ kind: 'warn', text: `Milk was ordered in more than one size (${[...sum.cats.milk.sizes].join(', ')}). The milk count adds them together — open the Milk row to see the split.` });
     fill($('notices'), ...notes.map(n => el('div', { class: 'note ' + (n.kind === 'error' ? 'error' : ''), role: n.kind === 'error' ? 'alert' : null }, n.text)));
   }

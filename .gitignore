@@ -7,3 +7,6 @@ Monday Night Counts.html
 
 .claude/
 node_modules/
+
+# The Barn2Door pull lives in its own private repository (it handles customer data)
+automation/
