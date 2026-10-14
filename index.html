@@ -52,6 +52,10 @@
   #b2d form { display: flex; flex-wrap: wrap; gap: 8px; flex: 1 1 100%; }
   #b2d input { flex: 1 1 220px; min-width: 0; font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); }
 
+  .printrow { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; padding: 10px 0; border-top: 1px solid var(--line); }
+  .printrow .sub { display: block; color: var(--muted); font-size: .88rem; }
+  .printrow .actions { display: flex; gap: 14px; align-items: center; }
+
   #files { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
   .chip { background: var(--soft); border-radius: 999px; padding: 5px 6px 5px 14px; font-size: .9rem; display: flex; gap: 8px; align-items: center; }
   .chip small { color: var(--muted); }
@@ -110,7 +114,7 @@
     td.num { font-size: 1.1rem; }
   }
   @media print {
-    #b2d, #drop, .chip button, #startOver, .message .btn { display: none !important; }
+    #b2d, #printing, #drop, .chip button, #startOver, .message .btn { display: none !important; }
     body { background: #fff; }
     .card { border: 0; padding: 0; }
   }
@@ -130,6 +134,7 @@
     <p class="hint">One zip covering every location, or a separate zip for each. Files are read on this device only — nothing is uploaded.</p>
   </div>
 
+  <section id="printing" class="card" hidden></section>
   <div id="files" hidden></div>
   <div id="notices"></div>
   <section id="decisions" class="card" hidden></section>
@@ -549,7 +554,7 @@ const MNC = (() => {
   // latest set there. This device reads them, and can start a pull, using an access key
   // for that repository which is pasted in once and kept in this browser.
   const DATA_REPO = 'jpadamsnc/monday-night-counts-data';
-  const b2d = { token: store.get('token') || '', asking: false, busy: '', error: '', manifest: null, reports: [] };
+  const b2d = { token: store.get('token') || '', asking: false, busy: '', error: '', manifest: null, reports: [], printLog: null, printing: '', printError: '' };
 
   async function github(path, options = {}) {
     const res = await fetch(`https://api.github.com/repos/${DATA_REPO}/${path}`, {
@@ -578,6 +583,7 @@ const MNC = (() => {
       const combined = manifest.reports.find(r => r.kind === 'combined' && r.file);
       b2d.manifest = manifest;
       b2d.reports = [];
+      await loadPrintLog();
       state.files = []; state.decisions = {}; state.notices = []; state.open.clear();
       if (combined) {
         await addFiles([await savedReport(combined)]);
@@ -612,9 +618,23 @@ const MNC = (() => {
     if (extra.length) state.notices.push({ kind: 'warn', text: `The combined report also has orders for ${extra.join(', ')}, which ${extra.length === 1 ? 'has' : 'have'} no report of ${extra.length === 1 ? 'its' : 'their'} own.` });
   }
 
-  async function latestRun() {
-    const res = await github('actions/workflows/pull.yml/runs?per_page=1');
+  async function latestRun(workflow) {
+    const res = await github(`actions/workflows/${workflow}/runs?per_page=1`);
     return res.ok ? ((await res.json()).workflow_runs || [])[0] : null;
+  }
+
+  // Starts a job in the pack list repository and waits for it; resolves true if it succeeded.
+  async function runJob(workflow, inputs, what) {
+    const before = await latestRun(workflow);
+    const asked = Date.now();
+    const res = await github(`actions/workflows/${workflow}/dispatches`, { method: 'POST', body: JSON.stringify({ ref: 'main', inputs }) });
+    if (!res.ok) throw new Error(res.status === 404 ? `This device's access key is not allowed to start ${what}.` : `GitHub answered ${res.status} when asked to start ${what}.`);
+    for (;;) {
+      await new Promise(done => setTimeout(done, b2d.pollMs || 5000));
+      if (Date.now() - asked > 6 * 60000) throw new Error(`Waited six minutes for ${what} and it has not finished. Try again in a few minutes.`);
+      const run = await latestRun(workflow);
+      if (run && !(before && run.id === before.id) && run.status === 'completed') return run.conclusion === 'success';
+    }
   }
 
   async function pullNow() {
@@ -622,18 +642,7 @@ const MNC = (() => {
     b2d.error = '';
     render();
     try {
-      const before = await latestRun();
-      const asked = Date.now();
-      const res = await github('actions/workflows/pull.yml/dispatches', { method: 'POST', body: JSON.stringify({ ref: 'main' }) });
-      if (!res.ok) throw new Error(res.status === 404 ? 'This device\'s access key is not allowed to start a pull.' : `GitHub answered ${res.status} when asked to start the pull.`);
-      for (;;) {
-        await new Promise(done => setTimeout(done, b2d.pollMs || 5000));
-        if (Date.now() - asked > 6 * 60000) throw new Error('The pull is taking much longer than usual. Try again in a few minutes.');
-        const run = await latestRun();
-        if (!run || (before && run.id === before.id) || run.status !== 'completed') continue;
-        if (run.conclusion !== 'success') throw new Error('The pull from Barn2Door failed. Try again; if it keeps failing, Barn2Door may have changed its page.');
-        break;
-      }
+      if (!(await runJob('pull.yml', {}, 'the pull'))) throw new Error('The pull from Barn2Door failed. Try again; if it keeps failing, Barn2Door may have changed its page.');
       await loadLatest();
       return;
     } catch (e) {
@@ -641,6 +650,61 @@ const MNC = (() => {
     }
     b2d.busy = '';
     render();
+  }
+
+  // ---- printing ----
+  // Printing goes through the same repository: its print job sends the saved location
+  // report to the office printer. Nothing prints unless a Print button is pressed here
+  // (or the Monday schedule runs).
+  async function loadPrintLog() {
+    const res = await github('contents/data/latest/print-log.json', { headers: { Accept: 'application/vnd.github.raw+json' } });
+    b2d.printLog = res.ok ? await res.json() : null;
+  }
+
+  async function printNow(location) {
+    if (!confirm(`Print the ${location} pack list on the office printer?`)) return;
+    b2d.printing = location;
+    b2d.printError = '';
+    render();
+    try {
+      const ok = await runJob('print.yml', { location }, 'the print job');
+      await loadPrintLog();
+      if (!ok) throw new Error(`The ${location} print job failed. Check that the office PC is on and PrintNode is running.`);
+    } catch (e) {
+      b2d.printError = e.message || String(e);
+    }
+    b2d.printing = '';
+    render();
+  }
+
+  function openPdf(report) {
+    const url = URL.createObjectURL(new Blob([report.pdfs[0].bytes], { type: 'application/pdf' }));
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+
+  const PRINT_STATES = { done: 'Printed', error: 'Print failed', expired: 'Not printed — the office PC was unreachable', new: 'Sent, waiting for the office PC', sent_to_client: 'Sent to the office PC', queued: 'Queued at the printer' };
+
+  function renderPrinting() {
+    const box = $('printing');
+    box.hidden = !(b2d.token && b2d.reports.length);
+    if (box.hidden) return;
+    const jobs = (b2d.printLog && b2d.printLog.deliveryDate === b2d.manifest.deliveryDate && b2d.printLog.jobs) || [];
+    fill(box,
+      el('h2', {}, 'Print pack lists'),
+      b2d.printError ? el('div', { class: 'note error', role: 'alert' }, b2d.printError) : null,
+      b2d.reports.map(report => {
+        const last = jobs.filter(j => j.location === report.location).pop();
+        const when = last && new Date(last.at).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+        const status = b2d.printing === report.location ? 'Sending to the printer…'
+          : last ? `${PRINT_STATES[last.state] || last.state} ${when}${last.trigger === 'schedule' ? ' (Monday schedule)' : ''}`
+          : 'Not printed yet';
+        return el('div', { class: 'printrow' },
+          el('div', {}, report.location, el('span', { class: 'sub', role: 'status' }, status)),
+          el('div', { class: 'actions' },
+            el('button', { class: 'btn', type: 'button', disabled: !!(b2d.printing || b2d.busy), onclick: () => printNow(report.location) }, last ? 'Print again' : 'Print'),
+            el('button', { class: 'link', type: 'button', onclick: () => openPdf(report) }, 'Open PDF')));
+      }));
   }
 
   const keyInput = el('input', { type: 'password', autocomplete: 'off', 'aria-label': 'Access key', placeholder: 'Access key' });
@@ -669,7 +733,7 @@ const MNC = (() => {
     const pulled = m && new Date(m.pulledAt).toLocaleString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     const disconnect = () => {
       store.remove('token');
-      Object.assign(b2d, { token: '', error: '', manifest: null, reports: [] });
+      Object.assign(b2d, { token: '', error: '', manifest: null, reports: [], printLog: null, printError: '' });
       render();
     };
     fill(box,
@@ -688,6 +752,7 @@ const MNC = (() => {
     const has = state.files.length > 0;
     renderHeader();
     renderB2d();
+    renderPrinting();
     renderFiles();
     renderNotices(sum);
     renderDecisions(sum);
@@ -912,7 +977,7 @@ const MNC = (() => {
   }
   for (const id of ['onHand', 'creamOnHand']) $(id).addEventListener('input', render);
 
-  window.MNCApp = { addFiles, state, b2d, loadLatest, pullNow };
+  window.MNCApp = { addFiles, state, b2d, loadLatest, pullNow, printNow };
   render();
   if (b2d.token) loadLatest();
 })();
