@@ -44,6 +44,14 @@
   #drop.compact .big { display: none; }
   #drop .big { font-size: 1.15rem; font-weight: 600; }
 
+  #b2d { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; padding: 14px 18px; }
+  #b2d p { margin: 0; flex: 1 1 240px; }
+  #b2d .sub { color: var(--muted); font-size: .9rem; }
+  #b2d .bad { color: var(--bad-ink); }
+  #b2d .actions { display: flex; gap: 14px; align-items: center; }
+  #b2d form { display: flex; flex-wrap: wrap; gap: 8px; flex: 1 1 100%; }
+  #b2d input { flex: 1 1 220px; min-width: 0; font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); }
+
   #files { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
   .chip { background: var(--soft); border-radius: 999px; padding: 5px 6px 5px 14px; font-size: .9rem; display: flex; gap: 8px; align-items: center; }
   .chip small { color: var(--muted); }
@@ -102,7 +110,7 @@
     td.num { font-size: 1.1rem; }
   }
   @media print {
-    #drop, .chip button, #startOver, .message .btn { display: none !important; }
+    #b2d, #drop, .chip button, #startOver, .message .btn { display: none !important; }
     body { background: #fff; }
     .card { border: 0; padding: 0; }
   }
@@ -112,6 +120,8 @@
 <main>
   <h1>Monday Night Counts</h1>
   <p id="subtitle"></p>
+
+  <section id="b2d" class="card"></section>
 
   <div id="drop">
     <p class="big">Drop the Barn2Door pack list zip here</p>
@@ -431,6 +441,7 @@ const MNC = (() => {
   const store = {
     get(k) { try { return localStorage.getItem('mnc.' + k); } catch { return null; } },
     set(k, v) { try { localStorage.setItem('mnc.' + k, v); } catch { /* private window */ } },
+    remove(k) { try { localStorage.removeItem('mnc.' + k); } catch { /* private window */ } },
   };
 
   function el(tag, props, ...kids) {
@@ -487,12 +498,150 @@ const MNC = (() => {
     state.files.push(list);
   }
 
+  // ---- Barn2Door pulls ----
+  // A job in a private GitHub repository pulls the pack lists from Barn2Door and keeps the
+  // latest set there. This device reads them, and can start a pull, using an access key
+  // for that repository which is pasted in once and kept in this browser.
+  const DATA_REPO = 'jpadamsnc/monday-night-counts-data';
+  const b2d = { token: store.get('token') || '', asking: false, busy: '', error: '', manifest: null, reports: [] };
+
+  async function github(path, options = {}) {
+    const res = await fetch(`https://api.github.com/repos/${DATA_REPO}/${path}`, {
+      cache: 'no-store', ...options,
+      headers: { Authorization: `Bearer ${b2d.token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...options.headers },
+    });
+    if (res.status === 401 || res.status === 403) throw new Error('GitHub did not accept this device\'s access key. It may have expired — disconnect and connect again with a new one.');
+    return res;
+  }
+
+  async function savedReport(report) {
+    const res = await github(`contents/data/latest/${report.file}`, { headers: { Accept: 'application/vnd.github.raw+json' } });
+    if (!res.ok) throw new Error(`The saved ${report.location || 'combined'} pack list could not be read (GitHub answered ${res.status}).`);
+    return new File([await res.arrayBuffer()], report.location ? `Barn2Door pull, ${report.location}` : 'Barn2Door pull');
+  }
+
+  async function loadLatest() {
+    b2d.busy = 'Loading the latest pull…';
+    b2d.error = '';
+    render();
+    try {
+      const res = await github('contents/data/latest/manifest.json', { headers: { Accept: 'application/vnd.github.raw+json' } });
+      if (res.status === 404) throw new Error('No saved pull was found. Either nothing has been pulled yet, or the access key does not cover the pack list repository.');
+      if (!res.ok) throw new Error(`GitHub answered ${res.status} when asked for the latest pull.`);
+      const manifest = await res.json();
+      const combined = manifest.reports.find(r => r.kind === 'combined' && r.file);
+      b2d.manifest = manifest;
+      b2d.reports = [];
+      state.files = []; state.decisions = {}; state.notices = []; state.open.clear();
+      if (combined) {
+        await addFiles([await savedReport(combined)]);
+        await checkLocationReports(manifest);
+      } else {
+        state.notices.push({ kind: 'warn', text: 'Barn2Door has no orders for that delivery date.' });
+      }
+    } catch (e) {
+      b2d.error = e.message || String(e);
+    }
+    b2d.busy = '';
+    render();
+  }
+
+  // The per-location reports are the ones that get printed, so they must say the same as the combined one.
+  async function checkLocationReports(manifest) {
+    const combinedRows = state.files.flatMap(f => f.rows);
+    const units = rows => rows.reduce((n, r) => n + r.qty, 0);
+    const listed = manifest.reports.filter(r => r.kind === 'location');
+    for (const report of listed) {
+      let own = 0;
+      if (report.file) {
+        const file = await savedReport(report);
+        const pdfs = await MNC.extractPdfs(file.name, await file.arrayBuffer());
+        for (const pdf of pdfs) own += units((await MNC.readPackList(pdfjsLib, pdf.bytes)).rows);
+        b2d.reports.push({ location: report.location, pdfs });
+      }
+      const expected = units(combinedRows.filter(r => r.location === report.location));
+      if (own !== expected) state.notices.push({ kind: 'error', text: `The ${report.location} report has ${own} ${plural(own, 'item')} but the combined report has ${expected} for that location. An order may have changed between the downloads — pull again.` });
+    }
+    const extra = [...new Set(combinedRows.map(r => r.location))].filter(l => !listed.some(r => r.location === l));
+    if (extra.length) state.notices.push({ kind: 'warn', text: `The combined report also has orders for ${extra.join(', ')}, which ${extra.length === 1 ? 'has' : 'have'} no report of ${extra.length === 1 ? 'its' : 'their'} own.` });
+  }
+
+  async function latestRun() {
+    const res = await github('actions/workflows/pull.yml/runs?per_page=1');
+    return res.ok ? ((await res.json()).workflow_runs || [])[0] : null;
+  }
+
+  async function pullNow() {
+    b2d.busy = 'Pulling from Barn2Door… this takes about a minute.';
+    b2d.error = '';
+    render();
+    try {
+      const before = await latestRun();
+      const asked = Date.now();
+      const res = await github('actions/workflows/pull.yml/dispatches', { method: 'POST', body: JSON.stringify({ ref: 'main' }) });
+      if (!res.ok) throw new Error(res.status === 404 ? 'This device\'s access key is not allowed to start a pull.' : `GitHub answered ${res.status} when asked to start the pull.`);
+      for (;;) {
+        await new Promise(done => setTimeout(done, b2d.pollMs || 5000));
+        if (Date.now() - asked > 6 * 60000) throw new Error('The pull is taking much longer than usual. Try again in a few minutes.');
+        const run = await latestRun();
+        if (!run || (before && run.id === before.id) || run.status !== 'completed') continue;
+        if (run.conclusion !== 'success') throw new Error('The pull from Barn2Door failed. Try again; if it keeps failing, Barn2Door may have changed its page.');
+        break;
+      }
+      await loadLatest();
+      return;
+    } catch (e) {
+      b2d.error = e.message || String(e);
+    }
+    b2d.busy = '';
+    render();
+  }
+
+  const keyInput = el('input', { type: 'password', autocomplete: 'off', 'aria-label': 'Access key', placeholder: 'Access key' });
+
+  function renderB2d() {
+    const box = $('b2d');
+    if (!b2d.token) {
+      const connect = e => {
+        e.preventDefault();
+        const key = keyInput.value.trim();
+        if (!key) return;
+        b2d.token = key; b2d.asking = false; keyInput.value = '';
+        store.set('token', key);
+        loadLatest();
+      };
+      fill(box, b2d.asking
+        ? el('form', { onsubmit: connect }, keyInput,
+            el('button', { class: 'btn primary', type: 'submit' }, 'Connect'),
+            el('button', { class: 'btn', type: 'button', onclick: () => { b2d.asking = false; render(); } }, 'Cancel'),
+            el('p', { class: 'sub' }, 'Paste the access key for the pack list repository. It is kept in this browser only.'))
+        : [el('p', { class: 'sub' }, 'This device is not connected to the automatic Barn2Door pull.'),
+           el('button', { class: 'btn', type: 'button', onclick: () => { b2d.asking = true; render(); keyInput.focus(); } }, 'Connect…')]);
+      return;
+    }
+    const m = b2d.manifest;
+    const pulled = m && new Date(m.pulledAt).toLocaleString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const disconnect = () => {
+      store.remove('token');
+      Object.assign(b2d, { token: '', error: '', manifest: null, reports: [] });
+      render();
+    };
+    fill(box,
+      b2d.busy ? el('p', { role: 'status' }, b2d.busy)
+        : b2d.error ? el('p', { class: 'bad', role: 'alert' }, b2d.error)
+        : el('p', {}, m ? `Pulled from Barn2Door ${pulled}` : 'Connected to the Barn2Door pull.'),
+      el('div', { class: 'actions' },
+        el('button', { class: 'btn primary', type: 'button', disabled: !!b2d.busy, onclick: pullNow }, 'Pull now'),
+        el('button', { class: 'link', type: 'button', disabled: !!b2d.busy, onclick: disconnect }, 'Disconnect')));
+  }
+
   // ---- rendering ----
   function render() {
     const rows = state.files.flatMap(f => f.rows);
     const sum = MNC.summarize(rows, state.decisions);
     const has = state.files.length > 0;
     renderHeader();
+    renderB2d();
     renderFiles();
     renderNotices(sum);
     renderDecisions(sum);
@@ -535,6 +684,8 @@ const MNC = (() => {
     for (const f of state.files) {
       for (const p of f.problems) notes.push({ kind: 'error', text: `${f.locations.join(', ')}: ${p}. It is not in the counts below — check it by hand.` });
     }
+    const pulledFor = b2d.manifest && new Date(b2d.manifest.deliveryDate + 'T23:59:59');
+    if (pulledFor && pulledFor < new Date()) notes.push({ kind: 'warn', text: `This pull is for ${pulledFor.toLocaleDateString('en-US', { weekday: 'long', month: 'numeric', day: 'numeric' })}, which has passed. Use Pull now to get the coming Monday.` });
     if (state.files.length && sum.locations.length === 1) notes.push({ kind: 'warn', text: `Only ${sum.locations[0]} is in what's loaded. If you expected another location, check the pack list covers it or drop that location's zip as well.` });
     if (sum.notCharged) notes.push({ kind: 'warn', text: `${sum.notCharged} counted ${plural(sum.notCharged, 'line')} ${sum.notCharged === 1 ? 'is a subscription' : 'are subscriptions'} Barn2Door has not charged yet (payment PENDING). They are included in the counts.` });
     if (sum.cats.milk.sizes.size > 1) notes.push({ kind: 'warn', text: `Milk was ordered in more than one size (${[...sum.cats.milk.sizes].join(', ')}). The milk count adds them together — open the Milk row to see the split.` });
@@ -715,8 +866,9 @@ const MNC = (() => {
   }
   for (const id of ['onHand', 'creamOnHand']) $(id).addEventListener('input', render);
 
-  window.MNCApp = { addFiles, state };
+  window.MNCApp = { addFiles, state, b2d, loadLatest, pullNow };
   render();
+  if (b2d.token) loadLatest();
 })();
 </script>
 </body>
